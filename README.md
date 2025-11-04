@@ -170,5 +170,5 @@ julia> s.b[3]
 **WARNING:** Be very careful when overloading `FieldViews.staticschema`, as mistakes could cause memory corruption if the fieldtypes and fieldoffsets are incorrect. Only use this feature if you are very confident 
 
 ## See also
-+ https://github.com/tkf/RecordArrays.jl Similar concept but has no zero-copy wrapper for normal arrays, and unmaintained.
-+ https://github.com/Vitaliy-Yakovchuk/StructViews.jl Same concept but with serious performance problems
++ [RecordArrays.jl](https://github.com/tkf/RecordArrays.jl) Similar concept but has no zero-copy wrapper for normal arrays, and no custom schema support.
++ [StructViews.jl](https://github.com/Vitaliy-Yakovchuk/StructViews.jl) Similar concept but with serious performance problems, and no support for custom schemas.
