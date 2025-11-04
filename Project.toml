@@ -10,6 +10,7 @@ ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 [compat]
 Accessors = "0.1.42"
 ConstructionBase = "1.6.0"
+julia = "1.9"
 
 [workspace]
 projects = ["test"]
