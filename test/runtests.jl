@@ -111,31 +111,31 @@ end
     @test colors[1, 2].r == 99
 end
 
-@testset "staticschema" begin
+@testset "mappedschema" begin
     struct TestStruct{T}
         a::T
         b::Int
         c::Float64
     end
     
-    schema = FieldViews.staticschema(TestStruct{Float32})
+    schema = FieldViews.mappedfieldschema(TestStruct{Float32})
     
     @test haskey(schema, :a)
     @test haskey(schema, :b)
     @test haskey(schema, :c)
     
-    @test schema.a.fieldtype == Float32
-    @test schema.b.fieldtype == Int
-    @test schema.c.fieldtype == Float64
+    @test schema.a.type == Float32
+    @test schema.b.type == Int
+    @test schema.c.type == Float64
     
-    @test schema.a.fieldoffset == 0x0000000000000000
-    @test schema.b.fieldoffset > schema.a.fieldoffset
-    @test schema.c.fieldoffset > schema.b.fieldoffset
+    @test schema.a.offset == 0x0000000000000000
+    @test schema.b.offset > schema.a.offset
+    @test schema.c.offset > schema.b.offset
     
     # Test that offsets match Julia's fieldoffset
-    @test schema.a.fieldoffset == fieldoffset(TestStruct{Float32}, 1)
-    @test schema.b.fieldoffset == fieldoffset(TestStruct{Float32}, 2)
-    @test schema.c.fieldoffset == fieldoffset(TestStruct{Float32}, 3)
+    @test schema.a.offset == fieldoffset(TestStruct{Float32}, 1)
+    @test schema.b.offset == fieldoffset(TestStruct{Float32}, 2)
+    @test schema.c.offset == fieldoffset(TestStruct{Float32}, 3)
 end
 
 @testset "Custom staticschema - nested data layout" begin
@@ -154,29 +154,33 @@ end
         end
     end
     Base.propertynames(s::MyType) = (:data, propertynames(getfield(s, :rest))...)
-    function ConstructionBase.setproperties(s::MyType, patch::PNT) where {PNT <: NamedTuple}
-        if hasfield(PNT, :data)
-	        data = patch.data
-	    else
-            data = s.data
-	    end
-	    rest = getfield(s, :rest)
-	    patch_rest = Base.structdiff(patch, NamedTuple{(:data,)})
-	    MyType(data, merge(rest, patch_rest))
-    end
     
     # Custom staticschema for flattened access
-    function FieldViews.staticschema(::Type{MyType{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
-        RestNT = NamedTuple{rest_names, rest_types}
-        rest_offset = fieldoffset(MyType{T, RestNT}, 2)
-        rest_schema = FieldViews.staticschema(RestNT)
-        rest_schema_offset = map(rest_schema) do row
-            (; fieldtype=row.fieldtype, fieldoffset=row.fieldoffset+rest_offset)
-        end
-        (data=(fieldtype=T, fieldoffset=UInt(0)), rest_schema_offset...)
+    function FieldViews.fieldmap(::Type{MyType{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
+        (:data, map(name -> :rest => name, rest_names)...)
     end
     
     # Test the custom schema
+    schema = FieldViews.mappedfieldschema(MyType{Float32, @NamedTuple{b::Int, c::Float64}})
+    
+    @test haskey(schema, :data)
+    @test haskey(schema, :b)
+    @test haskey(schema, :c)
+    
+    @test schema.data.type == Float32
+    @test schema.b.type == Int
+    @test schema.c.type == Float64
+    
+    @test schema.data.offset == 0x0000000000000000
+    @test schema.b.offset > schema.data.offset
+    @test schema.c.offset > schema.b.offset
+    
+    # Test that offsets match Julia's fieldoffset
+    @test schema.data.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 1)
+    @test schema.b.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 2)
+    @test schema.c.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 3)
+
+    # Test using the schema    
     s = FieldViewable([MyType(i/5, a=6-i, b=2, c=string(i)) for i in 1:5])
     
     @test size(s) == (5,)
@@ -211,6 +215,7 @@ end
 
     s.c[3] = "boo!"
     @test s.c[3] == "boo!"
+
 end
 
 @testset "Non-bits types" begin

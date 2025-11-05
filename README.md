@@ -42,112 +42,86 @@ julia> println(points_fv.x[1])
 julia> println(points_fv.y[2])
 5.0
 
-julia> points_fv.x[1] = 10.0 # Modify values in-place
-10.0
-
-julia> println(points[1].x)# original array is modified!
-10.0
-```
-
-```julia
-# Wrap in FieldViewable
-points_fv = FieldViewable(points)
-
-# Access fields as arrays - no allocation!
-points_fv.x  # Returns a FieldView{:x, ...}
-points_fv.y  # Returns a FieldView{:y, ...}
-
-# Read values
-println(points_fv.x[1])  # 1.0
-println(points_fv.y[2])  # 5.0
-
 # Modify values in-place
-points_fv.x[1] = 10.0
-println(points[1].x)  # 10.0 - original array is modified!
+julia> points_fv.x[1] = 10.0
+10.0
+
+# original array is modified!
+julia> points[1].x 
+10.0
 ```
 
-You can take views of `FieldViews` to work with a subset of the array:
+You can take views of `FieldViews` to work with a slice of the array:
 
 ``` julia
 # Create a view of a subset
-julia> points_fv_subset = view(points_fv, 2:3)
+julia> points_fv_slice = view(points_fv, 2:3)
 2-element FieldViewable{Point{Float64}, 1, SubArray{Point{Float64}, 1, Vector{Point{Float64}}, Tuple{UnitRange{Int64}}, true}}:
  Point{Float64}(4.0, 5.0, 6.0)
  Point{Float64}(7.0, 8.0, 9.0)
 
 # Access fields of the view
-julia> points_fv_subset.x[1] = 99.0
+julia> points_fv_slice.x[1] = 99.0
 99.0
 
-julia> points[2]  # Original array is modified
+# Original array is modified
+julia> points[2]
 Point{Float64}(99.0, 5.0, 6.0)
 ```
 
+### Warning: Fields versus Properties
+
+Be aware that unlike StructArrays.jl, FieldViews.jl operates on the **fields** of structs, not their properties. Mutating the fields of a struct in an array using FieldViews.jl can therefore violate the API of certain types, and bypass internal constructors, thus creating potentially invalid objects. You should only use FieldViews.jl with arrays of structs you control, or whose field layout is a public part of their API.
+
 ### Limitations
 - FieldViews.jl only supports arrays whose eltype are concrete, immutable structs. However, fields of the struct do not have this limitation.
-- Reading or writing to a `FieldView` whose corresponding field is not `isbits` can be slower than non-isbits fields if the corresponding struct has many fields. This is because for non-`isbits` fields we need to load the whole struct entry, manipulate it, and then write back to the array. In contrast, for an `isbits` field, we are able to read and write the individual field.
+- Reading or writing to a `FieldView` whose corresponding field is not `isbits` can be slower than non-isbits fields if the outer struct has many fields. This is because for non-`isbits` fields we need to load the whole struct entry, manipulate it, and then write back to the array. In contrast, for an `isbits` field, we are able to read and write the individual field.
 
-### Working with custom data-layouts
+### Working with nested data-layouts
 
 Sometimes you have nested data but want to treat it as a flattened struct, e.g. adapting an example from the [StructArrays.jl docs](https://juliaarrays.github.io/StructArrays.jl/stable/advanced/#Structures-with-non-standard-data-layout)
 
 ``` julia
 struct MyType{T, NT<:NamedTuple}
-    data::T
+    x::T
     rest::NT
 end
 MyType(x; kwargs...) = MyType(x, values(kwargs))
 
 function Base.getproperty(s::MyType, prop::Symbol)
-    if prop == :data
+    if prop == :x
         getfield(s, prop)
     else
         getfield(getfield(s, :rest), prop)
     end
 end
 Base.propertynames(s::MyType) = (:data, propertynames(getfield(x, :rest))) 
-using ConstructionBase
-function ConstructionBase.setproperties(s::MyType{T, NT}, patch::PNT) where {PNT <: NamedTuple}
-    if hasfield(PNT, :data)
-	    data = patch.data
-	else
-        data = s.data
-	end
-	rest = getfield(s, :rest)
-	patch_rest = Base.structdiff(patch, NamedTuple{(:data,)})
-	MyType(data, merge(rest, patch_rest))
-end
 ```
 
 ``` julia
-julia> MyType(1.0; a=1, b=2).a
+julia> mt = MyType(1.0; a=1, b=2)
+MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(1.0, (a = 1, b = 2))
+
+julia> mt.a
 1
 
-julia> MyType(1.0; a=1, b=2).b
+julia> mt.b
 2
 ```
+We can support this 'flattened' structure in `FieldViews` by defining a custom method on `fieldmap` that tells `FieldViews` how to traverse the nested fields.
 
-We can support this flattened structure in `FieldViews` by defining a custom `staticschema` with the relevant fieldtypes and fieldoffsets. Here's what the generated schema for a `NamedTuple` looks like:
-
+To teach `FieldViews` how to handle `MyType`, we'd do
 ``` julia
-julia> FieldViews.staticschema(@NamedTuple{a::Int, b::String})
-(a = (fieldtype = Int64, fieldoffset = 0x0000000000000000), b = (fieldtype = String, fieldoffset = 0x0000000000000008))
-```
-So to generate a flattened schema for `MyType`, we do
-``` julia
-function FieldViews.staticschema(::Type{MyType{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
-    RestNT = NamedTuple{rest_names, rest_types}
-	rest_offset = fieldoffset(MyType{T, RestNT}, 2)
-    rest_schema = FieldViews.staticschema(RestNT)
-	rest_schema_offset = map(rest_schema) do row
-        # Tell FieldViews there are more fields at certain offsets from the start of the struct
-        (; fieldtype=row.fieldtype, fieldoffset=row.fieldoffset+rest_offset)
-    end
-    (data=(fieldtype=T, fieldoffset=UInt(0)), rest_schema_offset...)
+function FieldViews.fieldmap(::Type{MyType{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
+	(:x, map(name -> :rest => name, rest_names)...)
 end
 ```
 
-and now our nested struct is compatible with FieldViews.jl
+``` julia
+julia> FieldViews.fieldmap(typeof(mt))
+(:x, :rest => :a, :rest => :b)
+```
+This says that there is one field `:x` which is not redirected, and two inner fields `:a` and `:b` which are redirected from `:rest`. Now our nested struct is compatible with FieldViews.jl
 ``` julia
 julia> s = FieldViewable([MyType(i/5, a=6-i, b=2) for i in 1:5])
 5-element FieldViewable{MyType{Float64, @NamedTuple{a::Int64, b::Int64}}, 1, Vector{MyType{Float64, @NamedTuple{a::Int64, b::Int64}}}}:
@@ -167,8 +141,7 @@ julia> s.b[3]
 2
 ```
 
-**WARNING:** Be very careful when overloading `FieldViews.staticschema`, as mistakes could cause memory corruption if the fieldtypes and fieldoffsets are incorrect. Only use this feature if you are very confident 
-
 ## See also
-+ [RecordArrays.jl](https://github.com/tkf/RecordArrays.jl) Similar concept but has no zero-copy wrapper for normal arrays, and no custom schema support.
-+ [StructViews.jl](https://github.com/Vitaliy-Yakovchuk/StructViews.jl) Similar concept but with serious performance problems, and no support for custom schemas.
++ [RecordArrays.jl](https://github.com/tkf/RecordArrays.jl) Similar concept but has no zero-copy wrapper for normal arrays, and no custom schema support. At the time of writing, RecordArrays is unmaintained.
++ [StructViews.jl](https://github.com/Vitaliy-Yakovchuk/StructViews.jl) Similar concept but with serious performance problems, and no support for custom schemas. At the time of writing, StructViews is unmaintained.
++ [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl) Similar concept except it works in terms of properties instead of fields, and it ses an struct-of-arrays instead of array-of-structs memory layout, which thus causes allocations to construct out of a regular `Array`, and has certain performance tradeoffs relative to array-of-structs layouts. StructArrays.jl is mature, widely used, and actively developed.

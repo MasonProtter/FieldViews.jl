@@ -1,16 +1,14 @@
 name = "FieldViews"
 uuid = "ff5a1669-b1f2-423e-bbd7-b7fa0f7e0224"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Mason Protter <mason.protter@icloud.com>"]
-
-[deps]
-Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
-ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-
-[compat]
-Accessors = "0.1.42"
-ConstructionBase = "1.6.0"
-julia = "1.9"
 
 [workspace]
 projects = ["test"]
+
+[deps]
+Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+
+[compat]
+Accessors = "0.1.42"
+julia = "1.9"

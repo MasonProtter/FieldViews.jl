@@ -1,7 +1,17 @@
 module FieldViews
 
 export FieldViewable, get_store, FieldView
-using Accessors: Accessors, @set, PropertyLens, set
+using Accessors:
+    Accessors,
+    PropertyLens,
+    set,
+    ComposedOptic,
+    opticcompose
+
+if VERSION > v"1.11.0-DEV.469"
+    # public fieldmap, mappedfieldschema
+    eval(Expr(:public, :fieldmap, :mappedfieldschema))
+end
 
 struct FieldViewable{T, N, Store <: StridedArray{T, N}} <: AbstractArray{T, N}
     parent::Store
@@ -24,6 +34,9 @@ end
 function Base.getproperty(v::FieldViewable{T, N, Store}, prop::Symbol) where {T, N, Store}
    FieldView{prop}(v)
 end
+
+#-------------------
+
 Base.propertynames(v::FieldViewable{T}) where {T} = fieldnames(T)
 
 function staticschema(::Type{T}) where {T}
@@ -34,7 +47,7 @@ struct FieldView{prop, FT, N, T, Store <: StridedArray{T, N}} <: AbstractArray{F
     parent::Store
     function FieldView{prop}(v::Store) where {prop, T, N, Store <: StridedArray{T, N}}
         @assert isconcretetype(T) && !ismutabletype(T)
-        FT = staticschema(T)[prop].fieldtype
+        FT = mappedfieldschema(T)[prop].type
         new{prop, FT, N, T, Store}(v)
     end
 end
@@ -46,27 +59,89 @@ Base.IndexStyle(::Type{<:FieldView}) = IndexLinear()
 Base.@propagate_inbounds function Base.getindex(v::FieldView{prop, FT, N, T}, i::Integer) where {prop, FT, N, T}
     store = parent(v)
     @boundscheck checkbounds(store, i)
+    schema = mappedfieldschema(T)[prop]
     if isbitstype(FT)
         GC.@preserve store begin
-            ptr::Ptr{FT} = pointer(store, i) + staticschema(T)[prop].fieldoffset
+            ptr::Ptr{FT} = pointer(store, i) + schema.offset
             unsafe_load(ptr)
         end
     else
-        @inbounds getproperty(store[i], prop)
+        schema.lens(@inbounds store[i])
     end
 end
 
 Base.@propagate_inbounds function Base.setindex!(v::FieldView{prop, FT, N, T}, x, i::Integer) where {prop, FT, N, T}
     store = parent(v)
     @boundscheck checkbounds(store, i)
+    schema = mappedfieldschema(T)[prop]
     if isbitstype(FT)
         GC.@preserve store begin
-            ptr::Ptr{FT} = pointer(store, i) + staticschema(T)[prop].fieldoffset
+            ptr::Ptr{FT} = pointer(store, i) + schema.offset
             unsafe_store!(ptr, convert(FT, x)::FT)
         end
     else
-        @inbounds setindex!(store, set(store[i], PropertyLens{prop}(), x), i)
+        @inbounds setindex!(store, set(store[i], schema.lens, x), i)
     end
 end
+
+#-------------------
+
+function fieldmap(::Type{T}) where {T}
+    fieldnames(T)
+end
+
+function mappedfieldschema(::Type{T}) where {T}
+    fm = fieldmap(T)
+    names = get_final.(fm)
+    schema = ntuple(Val(length(fm))) do i
+        lens = as_field_lens(fm[i])
+        offset = nested_fieldoffset(T, fm[i])
+        type = nested_fieldtype(T, fm[i])
+        (; lens, offset, type)
+    end
+    NamedTuple{names}(schema)
+end
+as_field_lens(prop::Symbol) = FieldLens{prop}() 
+as_field_lens((l, r)::Pair) = opticcompose(as_field_lens(l), as_field_lens(r))
+
+get_final(x) = x
+get_final((l, r)::Pair) = get_final(r)
+
+function nested_fieldoffset(::Type{T}, field::Symbol) where {T}
+    idx = Base.fieldindex(T, field)
+    fieldoffset(T, idx)
+end
+
+function nested_fieldoffset(::Type{T}, (outer, inner)::Pair{Symbol}) where {T}
+    idx = Base.fieldindex(T, outer)
+    fieldoffset(T, idx) + nested_fieldoffset(fieldtype(T, idx), inner)
+end
+
+function nested_fieldtype(::Type{T}, field::Symbol) where {T}
+    idx = Base.fieldindex(T, field)
+    fieldtype(T, idx)
+end
+function nested_fieldtype(::Type{T}, (outer, inner)::Pair{Symbol}) where {T}
+    idx = Base.fieldindex(T, outer)
+    nested_fieldtype(fieldtype(T, idx), inner)
+end
+
+#-------------------
+struct FieldLens{field}
+    FieldLens(field::Symbol) = new{field}()
+    FieldLens{field}() where {field} = new{field}()
+end
+(l::FieldLens{prop})(o) where {prop} = getfield(o, prop)
+
+function Accessors.set(o, l::FieldLens{prop}, val) where {prop}
+    setfield(o, val, Val(prop))
+end
+
+@generated function setfield(obj::T, val, ::Val{name}) where {T, name}
+    fields = fieldnames(T)
+    name ∈ fields || error("$(repr(name)) is not a field of $T, expected one of ", fields)
+    Expr(:new, T, (name == field ? :val : :(getfield(obj, $(QuoteNode(field)))) for field ∈ fields)...)
+end
+
 
 end # module FieldViews
