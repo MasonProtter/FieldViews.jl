@@ -1,6 +1,6 @@
 name = "FieldViews"
 uuid = "ff5a1669-b1f2-423e-bbd7-b7fa0f7e0224"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Mason Protter <mason.protter@icloud.com>"]
 
 [workspace]
