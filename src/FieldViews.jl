@@ -39,7 +39,7 @@ end
 
 Base.similar(::Type{FieldViewable{T, N, Store}}, axes) where {T, N, Store} = FieldViewable(similar(Store, axes))
 Base.similar(a::FieldViewable, ::Type{T}, dims::Tuple{Vararg{Int}}) where {T} = FieldViewable(similar(parent(a), T, dims))
-Base.copyto!(v::FieldViewable, bc::Broadcast.Broadcasted) where {T, N, Store} = copyto!(parent(v), bc)
+Base.copyto!(v::FieldViewable, bc::Broadcast.Broadcasted) = copyto!(parent(v), bc)
 
 function Broadcast.broadcast_unalias(dest::FieldViewable, src::AbstractArray)
     FieldViewable(Broadcast.broadcast_unalias(parent(dest), src))
