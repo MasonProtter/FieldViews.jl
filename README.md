@@ -141,6 +141,32 @@ julia> s.b[3]
 2
 ```
 
+### Renaming fields
+
+In addition to flattening out nested field structures, FieldViews.jl is also able to support "renamed" fields, e.g. 
+
+``` julia
+struct Foo
+    a::Int
+	data::@NamedTuple{_b::Int, _c::Int}
+end
+
+function FieldViews.fieldmap(::Type{Foo})
+    (:a, :data => Renamed(:_b, :b), :data => Renamed(:_c, :c))
+end
+```
+
+``` julia
+julia> v = FieldViewable([Foo(1, (_b=1, _c=2))]);
+
+julia> v.c
+1-element FieldView{:c, Int64, 1, Foo, Vector{Foo}}:
+ 2
+```
+
+This is used for [e.g. `StaticArray` support](ext/StaticArraysExt.jl) to rename `Tuple` fields to `:x`, `:y`, `:z`, `:w`.
+
+
 ## See also
 + [RecordArrays.jl](https://github.com/tkf/RecordArrays.jl) Similar concept but has no zero-copy wrapper for normal arrays, and no custom schema support. At the time of writing, RecordArrays is unmaintained.
 + [StructViews.jl](https://github.com/Vitaliy-Yakovchuk/StructViews.jl) Similar concept but with serious performance problems, and no support for custom schemas. At the time of writing, StructViews is unmaintained.

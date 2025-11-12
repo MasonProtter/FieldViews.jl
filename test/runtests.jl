@@ -1,7 +1,6 @@
 using FieldViews
 using Test
 using Accessors: @set
-using ConstructionBase
 
 @testset "Basic FieldViewable functionality" begin
     struct Point{T}
@@ -294,4 +293,16 @@ end
     fv_empty = FieldViewable(empty_array)
     @test size(fv_empty) == (0,)
     @test size(fv_empty.value) == (0,)
+end
+
+using StaticArrays
+
+@testset "StaticArrays" begin
+    points = [SVector(x, 2.0) for x in 1:0.5:2]
+    fv = FieldViewable(points)
+
+    @test fv.x == [1.0, 1.5, 2.0]
+    @test fv.y == [2.0, 2.0, 2.0]
+    fv.x[1] = -1
+    @test points[1].x == -1
 end

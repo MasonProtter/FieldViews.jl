@@ -1,6 +1,6 @@
 module FieldViews
 
-export FieldViewable, get_store, FieldView
+export FieldViewable, get_store, FieldView, Renamed, FieldLens
 using Accessors:
     Accessors,
     PropertyLens,
@@ -37,7 +37,7 @@ end
 
 #-------------------
 
-Base.propertynames(v::FieldViewable{T}) where {T} = fieldnames(T)
+Base.propertynames(v::FieldViewable{T}) where {T} = get_final.(fieldmap(T))
 
 function staticschema(::Type{T}) where {T}
     NamedTuple{fieldnames(T)}(ntuple(i -> (; fieldtype=fieldtype(T, i), fieldoffset=fieldoffset(T,i)), Val(fieldcount(T))))
@@ -101,34 +101,47 @@ function mappedfieldschema(::Type{T}) where {T}
     end
     NamedTuple{names}(schema)
 end
-as_field_lens(prop::Symbol) = FieldLens{prop}() 
+struct Renamed
+    actual::Union{Int, Symbol}
+    alias::Symbol
+end
+             
+as_field_lens(prop::Union{Symbol, Int}) = FieldLens{prop}()
+as_field_lens(prop::Renamed) = FieldLens{prop.actual}()
 as_field_lens((l, r)::Pair) = opticcompose(as_field_lens(l), as_field_lens(r))
 
 get_final(x) = x
+get_final(x::Renamed) = x.alias
 get_final((l, r)::Pair) = get_final(r)
 
 function nested_fieldoffset(::Type{T}, field::Symbol) where {T}
     idx = Base.fieldindex(T, field)
     fieldoffset(T, idx)
 end
-
-function nested_fieldoffset(::Type{T}, (outer, inner)::Pair{Symbol}) where {T}
+nested_fieldoffset(::Type{T}, idx::Int) where {T} = fieldoffset(T, idx)
+nested_fieldoffset(::Type{T}, field::Renamed) where {T} = nested_fieldoffset(T, field.actual)
+function nested_fieldoffset(::Type{T}, (outer, inner)::Pair{<:Union{Symbol, Int}}) where {T}
     idx = Base.fieldindex(T, outer)
     fieldoffset(T, idx) + nested_fieldoffset(fieldtype(T, idx), inner)
 end
 
+nested_fieldtype(::Type{T}, field::Renamed) where {T} = nested_fieldtype(T, field.actual)
 function nested_fieldtype(::Type{T}, field::Symbol) where {T}
     idx = Base.fieldindex(T, field)
     fieldtype(T, idx)
 end
-function nested_fieldtype(::Type{T}, (outer, inner)::Pair{Symbol}) where {T}
+function nested_fieldtype(::Type{T}, idx::Int) where {T}
+    fieldtype(T, idx)
+end
+
+function nested_fieldtype(::Type{T}, (outer, inner)::Pair{<:Union{Symbol, Int}}) where {T}
     idx = Base.fieldindex(T, outer)
     nested_fieldtype(fieldtype(T, idx), inner)
 end
 
 #-------------------
 struct FieldLens{field}
-    FieldLens(field::Symbol) = new{field}()
+    FieldLens(field::Union{Symbol, Int}) = new{field}()
     FieldLens{field}() where {field} = new{field}()
 end
 (l::FieldLens{prop})(o) where {prop} = getfield(o, prop)
