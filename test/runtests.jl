@@ -24,8 +24,8 @@ using Accessors: @set
     # Test propertynames
     @test propertynames(fv) == (:x, :y, :z)
 
-    # Test that it only accepts strided arrays
-    @test_throws ArgumentError FieldViewable(view(points, [1, 3]))
+    # Test that it also works with non-strided arrays
+    @test FieldViewable(view(points, [1, 3])).z[2] == 9.0
 end
 
 @testset "FieldView access and mutation" begin
@@ -315,4 +315,9 @@ using StaticArrays
     @test fv2.y == [2.0, 2.0, 2.0]
     fv2.x[1] = -1
     @test points2[1].x == -1
+
+    points3 = SVector{3}([SVector(x, 2.0) for x in 1:0.5:2])
+    fv3 = FieldViewable(points3)
+    @test fv3.x == [1.0, 1.5, 2.0]
+    @test fv3.y == [2.0, 2.0, 2.0]
 end
