@@ -13,4 +13,7 @@ function FieldViews.fieldmap(::Type{SA}) where {SA <: SVector}
     end
 end
 
+FieldViews.StridedArrayTrait(::Type{<:MArray}) = FieldViews.IsStrided()
+FieldViews.StridedArrayTrait(::Type{SizedArray{Sz, T, N, M, Store}}) where {Sz, T, N, M, Store} = FieldViews.StridedArrayTrait(Store)
+
 end
