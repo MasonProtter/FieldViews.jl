@@ -1,10 +1,10 @@
 # FieldViews.jl
 
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
-[docs-dev-url]: https://github.com/MasonProtter/FieldViews.jl/dev
+[docs-dev-url]: https://masonprotter.github.io/FieldViews.jl/dev/
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
-[docs-stable-url]: https://github.com/MasonProtter/FieldViews.jl/stable
+[docs-stable-url]: https://masonprotter.github.io/FieldViews.jl/stable/
 
 [![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] 
 
