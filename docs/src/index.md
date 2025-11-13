@@ -1,16 +1,8 @@
 # FieldViews.jl
 
-[docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
-[docs-dev-url]: https://JuliaFolds2.github.io/OhMyThreads.jl/dev
+A `FieldViewable` is an array that wraps a `StridedArray` without copying and allows one to access and manipulate views of selected fields of the structs stored in the underlying data. FieldViews.jl provides an API similar to [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl), but without copying and with an array-of-structs memory layout instead of a struct-of-array memory layout.
 
-[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
-[docs-stable-url]: https://JuliaFolds2.github.io/OhMyThreads.jl/stable
-
-[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] 
-
-A `FieldViewable` is an array that wraps another array without copying and allows one to access and manipulate views of selected fields of the structs stored in the underlying data. FieldViews.jl provides an API similar to [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl), but without copying and with an array-of-structs memory layout instead of a struct-of-array memory layout.
-
-``` julia
+```julia
 using FieldViews
 
 # Define a struct type
@@ -24,7 +16,7 @@ end
 points = [Point(1.0, 2.0, 3.0), Point(4.0, 5.0, 6.0), Point(7.0, 8.0, 9.0)]
 ```
 
-``` julia
+```julia
 julia> points_fv = FieldViewable(points)
 3-element FieldViewable{Point{Float64}, 1, Vector{Point{Float64}}}:
  Point{Float64}(10.0, 2.0, 3.0)
@@ -60,7 +52,7 @@ julia> points[1].x
 
 You can take views of `FieldViews` to work with a slice of the array:
 
-``` julia
+```julia
 # Create a view of a subset
 julia> points_fv_slice = view(points_fv, 2:3)
 2-element FieldViewable{Point{Float64}, 1, SubArray{Point{Float64}, 1, Vector{Point{Float64}}, Tuple{UnitRange{Int64}}, true}}:
@@ -76,13 +68,11 @@ julia> points[2]
 Point{Float64}(99.0, 5.0, 6.0)
 ```
 
-### Warning: Fields versus Properties
+## Warning: Fields versus Properties
 
 Be aware that unlike StructArrays.jl, FieldViews.jl operates on the **fields** of structs, not their properties. Mutating the fields of a struct in an array using FieldViews.jl can therefore violate the API of certain types, and bypass internal constructors, thus creating potentially invalid objects. You should only use FieldViews.jl with arrays of structs you control, or whose field layout is a public part of their API.
 
-FieldViews.jl *does* however optionally support the flattening of nested field accesses, and the renaming of fields. See the documentation for more details.
-
-### Limitations
+## Limitations
 - FieldViews.jl only supports arrays whose eltype are concrete, immutable structs. However, fields of the struct do not have this limitation.
 - Reading or writing to a `FieldView` whose corresponding field is not `isbits` can be slower than non-isbits fields if the outer struct has many fields. This is because for non-`isbits` fields we need to load the whole struct entry, manipulate it, and then write back to the array. In contrast, for an `isbits` field, we are able to read and write the individual field.
 - If the array itself doesn't support strided memory access (by defualt, members of the `StridedArray` union from Base, but types can opt in by overloading the `FieldFields.StidedArrayTrait`), then all fields will take the potentially slower fallback path where entire structs are loaded from memory, modified and then written back.
