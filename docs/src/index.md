@@ -35,20 +35,28 @@ julia> points_fv.y
  5.0
  8.0
 
-julia> println(points_fv.x[1]) 
+julia> points_fv.x[1]
 10.0
 
-julia> println(points_fv.y[2])
+julia> points_fv.y[2]
 5.0
 
-# Modify values in-place
-julia> points_fv.x[1] = 10.0
+julia> points_fv.x[1] = 10.0 # Modify values in-place
 10.0
 
-# original array is modified!
-julia> points[1].x 
+julia> points[1].x # original array is modified!
 10.0
 ```
+
+Instead of the `getproperty` syntax, you can directly construct views of particular field using the `FieldView{field}` constructor:
+```julia
+julia> FieldView{:x}(points)
+3-element FieldView{:x, Float64, 1, Point{Float64}, Vector{Point{Float64}}}:
+ 10.0
+  4.0
+  7.0
+```
+
 
 You can take views of `FieldViews` to work with a slice of the array:
 
@@ -72,12 +80,18 @@ Point{Float64}(99.0, 5.0, 6.0)
 
 Be aware that unlike StructArrays.jl, FieldViews.jl operates on the **fields** of structs, not their properties. Mutating the fields of a struct in an array using FieldViews.jl can therefore violate the API of certain types, and bypass internal constructors, thus creating potentially invalid objects. You should only use FieldViews.jl with arrays of structs you control, or whose field layout is a public part of their API.
 
-## Limitations
-- FieldViews.jl only supports arrays whose eltype are concrete, immutable structs. However, fields of the struct do not have this limitation.
-- Reading or writing to a `FieldView` whose corresponding field is not `isbits` can be slower than non-isbits fields if the outer struct has many fields. This is because for non-`isbits` fields we need to load the whole struct entry, manipulate it, and then write back to the array. In contrast, for an `isbits` field, we are able to read and write the individual field.
-- If the array itself doesn't support strided memory access (by defualt, members of the `StridedArray` union from Base, but types can opt in by overloading the `FieldFields.StidedArrayTrait`), then all fields will take the potentially slower fallback path where entire structs are loaded from memory, modified and then written back.
+## Performance characteristics of `FieldView`s
 
-## See also
-+ [RecordArrays.jl](https://github.com/tkf/RecordArrays.jl) Similar concept but has no zero-copy wrapper for normal arrays, and no custom schema support. At the time of writing, RecordArrays is unmaintained.
-+ [StructViews.jl](https://github.com/Vitaliy-Yakovchuk/StructViews.jl) Similar concept but with serious performance problems, and no support for custom schemas. At the time of writing, StructViews is unmaintained.
-+ [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl) Similar concept except it works in terms of properties instead of fields, and it ses an struct-of-arrays instead of array-of-structs memory layout, which thus causes allocations to construct out of a regular `Array`, and has certain performance tradeoffs relative to array-of-structs layouts. StructArrays.jl is mature, widely used, and actively developed.
+Getting and setting to `FieldView` arrays is most efficient when the following are satisfied:
+
+1. The underlying array (e.g. `points`) satisfies the [`IsStrided`](@ref) trait
+2. The `eltype` of the array (e.g. `Point{Int}`) is concrete and immutable
+3. The type of the field (e.g. `x::Int`) is concrete and immutable
+
+When all three of the above are satisfied, FieldViews can use efficient pointer methods to get and set fields in the array directly without needing to manipulate the entire struct.
+
+If any of the above conditions is *not* satisfied, then we need to fetch the entire struct,
+and then either return the requested field of the struct (`getindex`), or construct and store a version of the struct where the field has been modified (`setindex!`).  If the struct is a mutable type, `setindex!` expressions will call `setfield!` on the stored struct, otherwise we construct a new version of immutable structs where the requested field is modified (see  [Accessors.jl](https://github.com/JuliaObjects/Accessors.jl), and our custom [`FieldLens!!`](@ref) object).
+
+
+Note that even when the above conditions are not satisfied, the "slow" path is only slow relative to regular strided memory views, or something like [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl) (although note that StructArrays.jl cannot handle non-concrete types). It should still remain just as quick as working directly with the underlying storage array and interacting with whole elements.

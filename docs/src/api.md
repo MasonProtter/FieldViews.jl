@@ -17,7 +17,7 @@ Unknown
 ## Utility
 
 ```@docs
-FieldLens
+FieldLens!!
 ```
 
 ## Dangerous tools

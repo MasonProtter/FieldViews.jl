@@ -1,6 +1,6 @@
 module FieldViews
 
-export FieldViewable, FieldView, Renamed, FieldLens
+export FieldViewable, FieldView, Renamed, FieldLens!!
 
 using Accessors:
     Accessors,
@@ -80,7 +80,7 @@ struct IsStrided <: StridedArrayTrait end
 Trait indicating that an array type's memory layout is unknown or non-strided.
 
 For arrays with this trait, FieldViews will fall back on accessing/modifying field elements
-by loading/storing the entire containing struct, and then using [`FieldLens`](@ref) to
+by loading/storing the entire containing struct, and then using [`FieldLens!!`](@ref) to
 manipulate and set the required field. This can be slower in some circumstances.
 
 # See also
@@ -108,12 +108,9 @@ FieldViewable
 Wrap an array to enable zero-copy field access via properties.
 
 `FieldViewable` provides a view-like interface for accessing individual fields of 
-immutable structs stored in an array, without copying data. Field access returns 
-`FieldView` objects that can be indexed and modified in-place, with changes 
-reflected in the original array.
-
-# Requirements:
-- Element type `T` must be a concrete, immutable struct (but can have non-concrete, or mutable elements!)
+structs stored in an array, without copying data. Field access returns `FieldView`
+objects that can be indexed and modified in-place, with changes reflected in the
+original array.
 
 # Examples
 ```julia
@@ -140,6 +137,18 @@ slice.y[1] = 99.0
 points[1].y  # Now 99.0
 ```
 
+# Performance Note:
+Getting and setting to `FieldView` vectors is most efficient when
+the following are satisfied:
+1. The underlying vector (e.g. `arr`) satisfies the [`IsStrided`](@ref) trait
+2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and immutable
+3. The type of the field (e.g. `value::Int`) is an `isbitstype`.
+
+When all three of the above are satisfied, FieldViews can use efficient pointer
+methods to get and set fields in the array directly, otherwise we must use a slower
+fallback that loads the entire struct, modify it, and then sets the entire struct
+back into the array.
+
 # See also
 - [`FieldView`](@ref): The view type returned by field property access
 - [`fieldmap`](@ref): Customize field layout for nested structures
@@ -147,7 +156,6 @@ points[1].y  # Now 99.0
 struct FieldViewable{T, N, Store <: AbstractArray} <: AbstractArray{T, N}
     parent::Store
     function FieldViewable(v::Store) where {T, N, Store <: AbstractArray{T, N}}
-        @assert isconcretetype(T)
         new{T, N, Store}(v)
     end
 end
@@ -225,12 +233,31 @@ values[1]  # 1
 fv.weight[2] = 2.0
 arr[2].weight  # 2.0
 ```
+
+# Performance Note:
+Getting and setting to `FieldView` vectors is most efficient when
+the following are satisfied:
+1. The underlying vector (e.g. `arr`) satisfies the [`IsStrided`](@ref) trait
+2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and immutable
+3. The type of the field (e.g. `value::Int`) is an `isbitstype`.
+
+When all three of the above are satisfied, FieldViews can use efficient pointer
+methods to get and set fields in the array directly, otherwise we must use a slower
+fallback that loads the entire struct, modify it, and then sets the entire struct
+back into the array.
+
+# See also
+- [`FieldViewable`](@ref): The view type returned by field property access
+- [`fieldmap`](@ref): Customize field layout for nested structures
 """
 struct FieldView{prop, FT, N, T, Store <: AbstractArray{T, N}} <: AbstractArray{FT, N}
     parent::Store
     function FieldView{prop}(v::Store) where {prop, T, N, Store <: AbstractArray{T, N}}
-        @assert isconcretetype(T) && !ismutabletype(T)
-        FT = mappedfieldschema(T)[prop].type
+        FT = if isconcretetype(T)
+            mappedfieldschema(T)[prop].type
+        else
+            Any
+        end
         new{prop, FT, N, T, Store}(v)
     end
 end
@@ -244,40 +271,61 @@ to_linear_indices(v, inds::Tuple{}) = 1
 to_linear_indices(v, inds::Tuple{Integer}) = inds[1]
 to_linear_indices(v, inds::Tuple{Integer, Integer, Vararg{Integer}}) = LinearIndices(v)[inds...]
 
-Base.@propagate_inbounds function Base.getindex(v::FieldView{prop, FT, N, T}, inds::Integer...) where {prop, FT, N, T}
+function can_use_fast_path(::Type{FieldView{prop, FT, N, T, Store}}) where {prop, FT, N, T, Store}
+    is_strided(Store) && isconcretetype(T) && !ismutabletype(T) && isbitstype(FT)
+end
+
+Base.@propagate_inbounds function Base.getindex(v::FieldView{field, FT, N, T}, inds::Integer...) where {field, FT, N, T}
     store = parent(v)
     @boundscheck checkbounds(store, inds...)
-    schema = mappedfieldschema(T)[prop]
-    
-    if isbitstype(FT) && is_strided(store)
+    if can_use_fast_path(typeof(v))
+        # Fast happy path when we are allowed to read and write directly from memory
+        schema = mappedfieldschema(T)[field]
         GC.@preserve store begin
             i = to_linear_indices(v, inds)
             ptr::Ptr{FT} = pointer(store, i) + schema.offset
             unsafe_load(ptr)
         end
     else
-        schema.lens(@inbounds store[inds...])
+        # Slow fallback that works with any of
+        # 1. non-strided storage
+        # 2. non-concrete eltype
+        # 3. mutable eltype
+        # 4. non-isbits fields
+        elem = @inbounds store[inds...]
+        schema = mappedfieldschema(typeof(elem))[field]
+        schema.lens(elem)
     end
 end
 
-Base.@propagate_inbounds function Base.setindex!(v::FieldView{prop, FT, N, T}, x, inds::Integer...) where {prop, FT, N, T}
+Base.@propagate_inbounds function Base.setindex!(v::FieldView{field, FT, N, T}, x, inds::Integer...) where {field, FT, N, T}
     store = parent(v)
     @boundscheck checkbounds(store, inds...)
-    schema = mappedfieldschema(T)[prop]
-    if isbitstype(FT) && is_strided(store)
+    if can_use_fast_path(typeof(v))
+        # Fast happy path when we are allowed to read and write directly from memory
+        schema = mappedfieldschema(T)[field]
         GC.@preserve store begin
             i = to_linear_indices(v, inds)
             ptr::Ptr{FT} = pointer(store, i) + schema.offset
             unsafe_store!(ptr, convert(FT, x)::FT)
         end
     else
-        @inbounds setindex!(store, set(store[inds...], schema.lens, convert(FT, x)::FT), inds...)
+        # Slow fallback that works with any of
+        # 1. non-strided storage
+        # 2. non-concrete eltype
+        # 3. mutable eltype
+        # 4. non-isbits fields
+        elem   = @inbounds store[inds...]
+        schema = mappedfieldschema(typeof(elem))[field]
+        x′::FT = x
+        elem′  = set(elem, schema.lens, x′)
+        @inbounds setindex!(store, elem′, inds...)
     end
 end
 
 Base.dataids(v::FieldView) = Base.dataids(parent(v))
-Base.copy(fv::FieldView{prop}) where {prop} = FieldView{prop}(copy(parent(fv)))
-get_offset(f::FieldView{prop, FT, N, Store}) where {prop, FT, N, Store} = mappedfieldschema(Store)[prop].offset
+Base.copy(fv::FieldView{field}) where {field} = FieldView{field}(copy(parent(fv)))
+get_offset(f::FieldView{field, FT, N, Store}) where {field, FT, N, Store} = mappedfieldschema(Store)[field].offset
 
 #=======================================================================
 Field layout API
@@ -433,8 +481,8 @@ struct Renamed
     alias::Symbol
 end
              
-as_field_lens(prop::Union{Symbol, Int}) = FieldLens{prop}()
-as_field_lens(prop::Renamed) = FieldLens{prop.actual}()
+as_field_lens(prop::Union{Symbol, Int}) = FieldLens!!{prop}()
+as_field_lens(prop::Renamed) = FieldLens!!{prop.actual}()
 as_field_lens((l, r)::Pair) = opticcompose(as_field_lens(l), as_field_lens(r))
 
 get_final(x) = x
@@ -467,23 +515,27 @@ function nested_fieldtype(::Type{T}, (outer, inner)::Pair{<:Union{Symbol, Int}})
 end
 
 #=======================================================================
-FieldLens
+FieldLens!!
 =======================================================================# 
 
 """
-    FieldLens{field}
+    FieldLens!!{field}
 
 An optic for accessing and modifying a specific field of a struct.
 
-`FieldLens` implements the lens interface from Accessors.jl, providing functional
-field access and immutable updates. It is primarily used internally by FieldViews
-for non-`isbits` field access, but can also be used directly with the Accessors.jl
-API.
+`FieldLens!!` implements the lens interface from Accessors.jl, providing functional
+field access, immutable or mutable updates. It is primarily used internally by
+FieldViews for fallback field access/modification, but can also be used directly
+with the Accessors.jl API.
+
+The `!!` in its name is a convention from [BangBang.jl](https://github.com/juliafolds2/bangbang.jl)
+which signifies that it will mutate when possible, and perform out-of-place updates
+when mutation is not possible.
 
 # Constructor
 ```julia
-FieldLens(field::Union{Symbol,Int})
-FieldLens{field}()
+FieldLens!!(field::Union{Symbol,Int})
+FieldLens!!{field}()
 ```
 
 # Examples
@@ -493,7 +545,7 @@ struct Point{T}
     y::T
 end
 
-lens = FieldLens{:x}()
+lens = FieldLens!!{:x}()
 
 p = Point(1, 2)
 lens(p)  # Get: returns 1
@@ -502,24 +554,44 @@ using Accessors
 set(p, lens, 10)  # Set: returns Point(10, 2)
 ```
 
+```
+mutable struct MPoint{T}
+    x::T
+    y::T
+end
+
+mp = MPoint(1, 2)
+lens(mp)  # Get: returns 1
+
+set(mp, lens, 10)  # Set: returns Point(10, 2)
+lens(mp)           # Get: returns 10 now since we mutated the object
+```
+
+
 # See also
 - Accessors.jl documentation for general lens usage
 """
-struct FieldLens{field}
-    FieldLens(field::Union{Symbol, Int}) = new{field}()
-    FieldLens{field}() where {field} = new{field}()
+struct FieldLens!!{field}
+    FieldLens!!(field::Union{Symbol, Int}) = new{field}()
+    FieldLens!!{field}() where {field} = new{field}()
 end
-(l::FieldLens{prop})(o) where {prop} = getfield(o, prop)
+(l::FieldLens!!{prop})(o) where {prop} = getfield(o, prop)
 
-function Accessors.set(o, l::FieldLens{prop}, val) where {prop}
-    setfield(o, val, Val(prop))
-end
-
-@generated function setfield(obj::T, val, ::Val{name}) where {T, name}
-    fields = fieldnames(T)
-    name ∈ fields || error("$(repr(name)) is not a field of $T, expected one of ", fields)
-    Expr(:new, T, (name == field ? :val : :(getfield(obj, $(QuoteNode(field)))) for field ∈ fields)...)
+function Accessors.set(o, l::FieldLens!!{prop}, val) where {prop}
+    setfield!!(o, Val(prop), val)
 end
 
+@generated function setfield!!(obj::T, ::Val{name}, val) where {T, name}
+    if ismutabletype(T)
+        :(setfield!(obj, name, val); obj)
+    else
+        fields = fieldnames(T)
+        idx = findfirst(==(name), fields)
+        if isnothing(idx)
+            error("$(repr(name)) is not a field of $T, expected one of ", fields)
+        end
+        Expr(:new, T, (name == field ? :val : :(getfield(obj, $(QuoteNode(field)))) for field in fields)...)
+    end
+end
 
 end # module FieldViews
