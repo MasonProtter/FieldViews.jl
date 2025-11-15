@@ -1,5 +1,5 @@
 using Documenter, FieldViews
-using FieldViews: fieldmap, mappedfieldschema, IsStrided, StridedArrayTrait, Renamed, mappedfieldschema, Unknown
+using FieldViews: fieldmap, mappedfieldschema, IsStrided, StridedArrayTrait, Renamed, mappedfieldschema, Unknown, can_use_fast_path
 
 const ci = get(ENV, "CI", "") == "true"
 

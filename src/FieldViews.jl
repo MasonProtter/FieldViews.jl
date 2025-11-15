@@ -13,7 +13,7 @@ using Base: Broadcast
 
 if VERSION > v"1.11.0-DEV.469"
     # public fieldmap, mappedfieldschema
-    eval(Expr(:public, :fieldmap, :mappedfieldschema, :IsStrided, :Unknown, :StridedArrayTrait))
+    eval(Expr(:public, :fieldmap, :mappedfieldschema, :IsStrided, :Unknown, :StridedArrayTrait, :can_use_fast_path))
 end
 
 #=======================================================================
@@ -271,6 +271,45 @@ to_linear_indices(v, inds::Tuple{}) = 1
 to_linear_indices(v, inds::Tuple{Integer}) = inds[1]
 to_linear_indices(v, inds::Tuple{Integer, Integer, Vararg{Integer}}) = LinearIndices(v)[inds...]
 
+"""
+    can_use_fast_path(::Type{<:FieldView}) :: Bool
+
+Determine whether a `FieldView` type can use the optimized pointer-based access path.
+
+Returns `true` if the `FieldView` can use efficient pointer arithmetic for direct
+memory access, or `false` if it must use the potentially slower fallback path that
+loads and reconstructs entire structs.
+
+# Fast Path Requirements
+
+The fast path is used when ALL of the following conditions are met:
+
+1. **Strided storage**: The underlying array satisfies `StridedArrayTrait(Store) == IsStrided()`
+2. **Concrete element type**: The element type of the underlying storage is concrete
+3. **Immutable element type**: The element type of the underlying storage immutable (not a `mutable struct`)
+4. **Isbits field**: The field being accessed is and `isbitstype`
+
+When all conditions are met, FieldViews can compute the exact memory address of each
+field and read/write directly using `unsafe_load`/`unsafe_store!`.
+
+# Slow-Path Fallback
+
+When any condition is not met, FieldViews uses a fallback that:
+- For immutable types: loads the struct, extracts/modifies the field, constructs a new struct
+- For mutable types: loads the struct, uses `setfield!` to modify in place
+
+This is called "slow" only relative to pointer arithmetic—it still performs comparably
+to manual struct manipulation.
+
+Even when `can_use_fast_path` returns `false`, FieldViews still provides correct
+and reasonably efficient access. The fast path is an optimization, not a requirement
+for correctness.
+
+# See Also
+- [`StridedArrayTrait`](@ref): Query whether an array has strided memory layout
+- [`IsStrided`](@ref): Trait for strided arrays
+- [`FieldView`](@ref): The view type this function analyzes
+"""
 function can_use_fast_path(::Type{FieldView{prop, FT, N, T, Store}}) where {prop, FT, N, T, Store}
     is_strided(Store) && isconcretetype(T) && !ismutabletype(T) && isbitstype(FT)
 end

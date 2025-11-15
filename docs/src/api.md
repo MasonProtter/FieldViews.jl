@@ -20,6 +20,12 @@ Unknown
 FieldLens!!
 ```
 
+## Info
+
+```@docs
+can_use_fast_path
+```
+
 ## Dangerous tools
 
 ```@docs
