@@ -355,3 +355,186 @@ using StaticArrays
     @test fv3.x == [1.0, 1.5, 2.0]
     @test fv3.y == [2.0, 2.0, 2.0]
 end
+
+
+@testset "Non-concrete parametric types" begin
+    struct Container{T}
+        value::T
+    end
+    
+    # Vector{Container} - not Container{T} for specific T
+    mixed = FieldViewable(Container[Container(1), Container(2.0), Container("hi")])
+    @test mixed.value[1] == 1
+    @test mixed.value[2] == 2.0
+    @test mixed.value[3] == "hi"
+    
+    mixed.value[1] = 42
+    @test parent(mixed)[1].value == 42
+
+    mixed.value[3] = "bye"
+    @test parent(mixed)[3].value == "bye"
+end
+
+@testset "Mutable structs with non-isbits fields" begin
+    mutable struct MutableContainer
+        id::Int
+        data::String
+        metadata::Vector{Int}
+    end
+    
+    items = [MutableContainer(1, "a", [1,2]), MutableContainer(2, "b", [3,4])]
+    fv = FieldViewable(items)
+    
+    fv.data[1] = "modified"
+    @test items[1].data == "modified"
+    
+    fv.metadata[2] = [9, 9, 9]
+    @test items[2].metadata == [9, 9, 9]
+end
+
+@testset "Union types" begin
+    struct MaybeData
+        value::Union{Int, Nothing}
+    end
+    
+    data = [MaybeData(1), MaybeData(nothing), MaybeData(3)]
+    fv = FieldViewable(data)
+    
+    @test fv.value[1] == 1
+    @test fv.value[2] === nothing
+    @test fv.value[3] == 3
+    
+    fv.value[2] = 42
+    @test data[2].value == 42
+end
+
+@testset "Mutable nested structures" begin
+    mutable struct Inner
+        x::Int
+    end
+    
+    mutable struct Outer
+        inner::Inner
+        y::Float64
+    end
+    
+    items = [Outer(Inner(1), 2.0), Outer(Inner(3), 4.0)]
+    fv = FieldViewable(items)
+    
+    # This should work since we're replacing the whole Inner object
+    fv.inner[1] = Inner(99)
+    @test items[1].inner.x == 99
+end
+
+@testset "Abstract array with consistent fields" begin
+    abstract type AbstractData end
+    
+    struct DataA <: AbstractData
+        x::Int
+        y::Float64
+    end
+    
+    struct DataB <: AbstractData
+        x::Int
+        y::Float64
+    end
+    
+    # All have same field layout
+    mixed = AbstractData[DataA(1, 2.0), DataB(3, 4.0)]
+    fv = FieldViewable(mixed)
+    
+    @test fv.x[1] == 1
+    @test fv.x[2] == 3
+    
+    fv.y[1] = 99.0
+    @test mixed[1].y == 99.0
+end
+
+@testset "2D array with mutable structs" begin
+    mutable struct Cell
+        value::Int
+    end
+    
+    cells = [Cell(i*j) for i in 1:3, j in 1:4]
+    fv = FieldViewable(cells)
+    
+    @test size(fv.value) == (3, 4)
+    fv.value[2, 3] = 999
+    @test cells[2, 3].value == 999
+end
+
+@testset "Non-strided views with abstract types" begin
+    data = Any[(x=i, y=i*2) for i in 1:10]
+    v = view(data, [1, 3, 5, 7])
+    fv = FieldViewable(v)
+    
+    @test fv.x[1] == 1
+    @test fv.x[2] == 3
+    
+    fv.y[2] = 999
+    @test data[3].y == 999
+end
+
+@testset "Type inference for slow path" begin
+    mutable struct M
+        x::Int
+    end
+    
+    items = [M(1), M(2)]
+    fv = FieldViewable(items)
+    
+    # Should still infer return type correctly
+    @inferred Int fv.x[1]
+    
+    # But abstract types won't infer
+    abstract_items = Any[(x=1,), (x=2,)]
+    fv_abstract = FieldViewable(abstract_items)
+    @test fv_abstract.x[1] == 1  # Works but won't infer
+end
+
+@testset "Broadcasting with mutable types" begin
+    mutable struct Data
+        value::Float64
+    end
+    
+    items = [Data(1.0), Data(2.0), Data(3.0)]
+    fv = FieldViewable(items)
+    
+    fv.value .*= 2
+    @test items[1].value == 2.0
+    @test items[2].value == 4.0
+    @test items[3].value == 6.0
+end
+
+@testset "Zero-sized and empty types" begin
+    struct EmptyStruct end
+
+    items = [EmptyStruct() for i ∈ 1:3]
+    fv = FieldViewable(items)
+    @test fv[1] == EmptyStruct()
+    
+    struct WithEmpty
+        empty::EmptyStruct
+        value::Int
+    end
+    
+    items = [WithEmpty(EmptyStruct(), i) for i in 1:3]
+    fv = FieldViewable(items)
+    
+    @test fv.value[2] == 2
+    fv.value[2] = 99
+    @test items[2].value == 99
+end
+
+@testset "Slow path verification" begin
+    
+    # Verify mutable types use slow path
+    @test !FieldViews.can_use_fast_path(
+        FieldView{:x, Int, 1, M, Vector{M}}
+    )
+    
+    # Verify abstract types use slow path
+    @test !FieldViews.can_use_fast_path(
+        FieldView{:x, Any, 1, Any, Vector{Any}}
+    )
+end
