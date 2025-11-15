@@ -93,6 +93,5 @@ When all three of the above are satisfied, FieldViews can use efficient pointer 
 If any of the above conditions is *not* satisfied, then we need to fetch the entire struct,
 and then either return the requested field of the struct (`getindex`), or construct and store a version of the struct where the field has been modified (`setindex!`).  If the struct is a mutable type, `setindex!` expressions will call `setfield!` on the stored struct, otherwise we construct a new version of immutable structs where the requested field is modified (see  [Accessors.jl](https://github.com/JuliaObjects/Accessors.jl), and our custom [`FieldLens!!`](@ref) object).
 
-____
 
 Note that even when the above conditions are not satisfied, the "slow" path is only slow relative to regular strided memory views, or something like [StructArrays.jl](https://github.com/JuliaArrays/StructArrays.jl) (although note that StructArrays.jl cannot handle non-concrete types). It should still remain just as quick as working directly with the underlying storage array and interacting with whole elements.

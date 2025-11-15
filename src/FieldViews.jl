@@ -232,7 +232,7 @@ values[1]  # 1
 # Modify through view
 fv.weight[2] = 2.0
 arr[2].weight  # 2.0
-
+```
 
 # Performance Note:
 Getting and setting to `FieldView` vectors is most efficient when
@@ -249,7 +249,6 @@ back into the array.
 # See also
 - [`FieldViewable`](@ref): The view type returned by field property access
 - [`fieldmap`](@ref): Customize field layout for nested structures
-```
 """
 struct FieldView{prop, FT, N, T, Store <: AbstractArray{T, N}} <: AbstractArray{FT, N}
     parent::Store
