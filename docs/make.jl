@@ -16,7 +16,7 @@ makedocs(
 if ci
     @info "Deploying documentation to GitHub"
     deploydocs(;
-        repo = "https://github.com/MasonProtter/FieldViews.jl.git",
+        repo = "github.com/MasonProtter/FieldViews.jl.git",
         devbranch = "master",
         push_preview = true)
 end
