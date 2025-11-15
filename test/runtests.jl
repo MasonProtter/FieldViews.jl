@@ -358,12 +358,12 @@ end
 
 
 @testset "Non-concrete parametric types" begin
-    struct Container{T}
+    struct Container2{T}
         value::T
     end
     
-    # Vector{Container} - not Container{T} for specific T
-    mixed = FieldViewable(Container[Container(1), Container(2.0), Container("hi")])
+    # Vector{Container2} - not Container2{T} for specific T
+    mixed = FieldViewable(Container2[Container2(1), Container2(2.0), Container2("hi")])
     @test mixed.value[1] == 1
     @test mixed.value[2] == 2.0
     @test mixed.value[3] == "hi"
