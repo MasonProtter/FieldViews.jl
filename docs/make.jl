@@ -1,9 +1,7 @@
-
 using Documenter, FieldViews
 using FieldViews: fieldmap, mappedfieldschema, IsStrided, StridedArrayTrait, Renamed, mappedfieldschema, Unknown
 
 const ci = get(ENV, "CI", "") == "true"
-@info "" ci
 
 makedocs(
     sitename = "FieldViews.jl Documentation",

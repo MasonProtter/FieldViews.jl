@@ -25,7 +25,9 @@ using Accessors: @set
     @test propertynames(fv) == (:x, :y, :z)
 
     # Test that it also works with non-strided arrays
-    @test FieldViewable(view(points, [1, 3])).z[2] == 9.0
+    v2 = view(points, [1, 3])
+    @test_throws Exception pointer(v2, 1)
+    @test FieldViewable(v2).z[2] == 9.0
 end
 
 @testset "FieldView access and mutation" begin
@@ -162,63 +164,86 @@ end
         (:data, map(name -> :rest => name, rest_names)...)
     end
     
-    # Test the custom schema
-    schema = FieldViews.mappedfieldschema(MyType{Float32, @NamedTuple{b::Int, c::Float64}})
+    # And a mutable version!
+    struct MyTypeMutable{T, NT<:NamedTuple}
+        data::T
+        rest::NT
+    end
+    MyTypeMutable(x; kwargs...) = MyTypeMutable(x, values(kwargs))
     
-    @test haskey(schema, :data)
-    @test haskey(schema, :b)
-    @test haskey(schema, :c)
+    function Base.getproperty(s::MyTypeMutable, prop::Symbol)
+        if prop == :data
+            getfield(s, prop)
+        else
+            getfield(getfield(s, :rest), prop)
+        end
+    end
+    Base.propertynames(s::MyTypeMutable) = (:data, propertynames(getfield(s, :rest))...)
     
-    @test schema.data.type == Float32
-    @test schema.b.type == Int
-    @test schema.c.type == Float64
+    # Custom staticschema for flattened access
+    function FieldViews.fieldmap(::Type{MyTypeMutable{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
+        (:data, map(name -> :rest => name, rest_names)...)
+    end
     
-    @test schema.data.offset == 0x0000000000000000
-    @test schema.b.offset > schema.data.offset
-    @test schema.c.offset > schema.b.offset
-    
-    # Test that offsets match Julia's fieldoffset
-    @test schema.data.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 1)
-    @test schema.b.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 2)
-    @test schema.c.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 3)
+    @testset "" for Typ ∈ (MyType, MyTypeMutable,)
+        # Test the custom schema
+        schema = FieldViews.mappedfieldschema(Typ{Float32, @NamedTuple{b::Int, c::Float64}})
+        
+        @test haskey(schema, :data)
+        @test haskey(schema, :b)
+        @test haskey(schema, :c)
+        
+        @test schema.data.type == Float32
+        @test schema.b.type == Int
+        @test schema.c.type == Float64
+        
+        @test schema.data.offset == 0x0000000000000000
+        @test schema.b.offset > schema.data.offset
+        @test schema.c.offset > schema.b.offset
+        
+        # Test that offsets match Julia's fieldoffset
+        @test schema.data.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 1)
+        @test schema.b.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 2)
+        @test schema.c.offset == fieldoffset(@NamedTuple{data::Float32, b::Int, c::Float32}, 3)
 
-    # Test using the schema    
-    s = FieldViewable([MyType(i/5, a=6-i, b=2, c=string(i)) for i in 1:5])
-    
-    @test size(s) == (5,)
-    @test s[1].data == 0.2
-    @test s[1].a == 5
-    @test s[1].b == 2
-    @test s[1].c == "1"
-    
-    # Test field views
-    data_view = s.data
-    @test data_view[1] == 0.2
-    @test data_view[2] == 0.4
-    @test data_view[5] == 1.0
-    
-    a_view = s.a
-    @test a_view[1] == 5
-    @test a_view[2] == 4
-    @test a_view[5] == 1
-    
-    b_view = s.b
-    @test all(b_view .== 2)
+        # Test using the schema    
+        s = FieldViewable([Typ(i/5, a=6-i, b=2, c=string(i)) for i in 1:5])
+        
+        @test size(s) == (5,)
+        @test s[1].data == 0.2
+        @test s[1].a == 5
+        @test s[1].b == 2
+        @test s[1].c == "1"
+        
+        # Test field views
+        data_view = s.data
+        @test data_view[1] == 0.2
+        @test data_view[2] == 0.4
+        @test data_view[5] == 1.0
+        
+        a_view = s.a
+        @test a_view[1] == 5
+        @test a_view[2] == 4
+        @test a_view[5] == 1
+        
+        b_view = s.b
+        @test all(b_view .== 2)
 
-    @test s.c[1] == "1"
-    @test s.c[2] == "2"
-    
-    # Test mutation through field views
-    data_view[3] = 99.0
-    @test s[3].data == 99.0
-    
-    a_view[4] = 42
-    @test s[4].a == 42
+        @test s.c[1] == "1"
+        @test s.c[2] == "2"
+        
+        # Test mutation through field views
+        data_view[3] = 99.0
+        @test s[3].data == 99.0
+        
+        a_view[4] = 42
+        @test s[4].a == 42
 
-    s.c[3] = "boo!"
-    @test s.c[3] == "boo!"
-
+        s.c[3] = "boo!"
+        @test s.c[3] == "boo!"
+    end
 end
+
 
 @testset "Non-bits types" begin
     struct Container{T}
@@ -242,20 +267,29 @@ end
     @test containers[1].data == "modified"
 end
 
-@testset "Type assertions" begin
+@testset "Abstract types" begin
     # Test that abstract types are rejected
-    abstract_array = Vector{Any}([1, 2, 3])
-    @test_throws AssertionError FieldViewable(abstract_array)
-    
-    # Test that mutable structs are rejected in FieldView creation
+    v = FieldViewable(Any[(a=1, b=2, c=3), (a=1.0, x=2.0, c=3.0)])
+    @test v.a == Any[1, 1.0]
+    @test_throws Exception v.x[1] #One of the elements doesn't have an x field!
+end
+
+@testset "Mutable types" begin
     mutable struct MutablePoint
         x::Float64
         y::Float64
     end
-    
-    mutable_points = [MutablePoint(1.0, 2.0)]
-    fv = FieldViewable(mutable_points)
-    @test_throws AssertionError fv.x
+    mp1 = MutablePoint(1.0, 2.0)
+    mp2 = MutablePoint(3.0, 4.0)
+    mutable_points = FieldViewable([mp1, mp2])
+    @test mutable_points.x[1] == 1.0
+    @test mutable_points.y[2] == 4.0
+
+    mutable_points.x[2] *= -1
+    mutable_points.y[1] *= -1
+    # The underlying mutable objects are mutated!
+    @test mutable_points.x[2] == mp2.x == -3.0
+    @test mutable_points.y[1] == mp1.y == -2.0
 end
 
 @testset "Linear indexing" begin
