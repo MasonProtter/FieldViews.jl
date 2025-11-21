@@ -538,3 +538,36 @@ end
         FieldView{:x, Any, 1, Any, Vector{Any}}
     )
 end
+
+@testset "Undef fields" begin
+    struct MaybeUndef
+        x::Int
+        y::Int
+        z::String
+        w::String
+        MaybeUndef() = new()
+        MaybeUndef(x) = new(x)
+        MaybeUndef(x, y) = new(x, y)
+        MaybeUndef(x, y, z) = new(x, y, z)
+        MaybeUndef(x, y, z, w) = new(x, y, z, w)
+    end
+    v = FieldViewable([
+        MaybeUndef()
+        MaybeUndef(1)
+        MaybeUndef(1, 2)
+        MaybeUndef(1, 2, "three")
+        MaybeUndef(1, 2, "three", "four")
+    ])
+    v.x[1] = 1
+    v.y[1] = 2
+    v.z[1] = "boo!"
+    v.w[1] = "this is okay because I already set z!"
+    @test v.x[1] == 1
+    @test v.y[1] == 2
+    @test v.z[1] == "boo!"
+    @test v.w[1] == "this is okay because I already set z!"
+
+    @test_throws Exception v.w[2] = "This is not okay because z isn't set!"
+    v.w[4] = "This is okay because z is set"
+    @test v.w[4] == "This is okay because z is set"
+end
