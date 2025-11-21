@@ -85,10 +85,10 @@ Be aware that unlike StructArrays.jl, FieldViews.jl operates on the **fields** o
 Getting and setting to `FieldView` arrays is most efficient when the following are satisfied:
 
 1. The underlying array (e.g. `points`) satisfies the [`IsStrided`](@ref) trait
-2. The `eltype` of the array (e.g. `Point{Int}`) is concrete and immutable
-3. The type of the field (e.g. `x::Int`) is concrete and immutable
+2. The `eltype` of the array (e.g. `Point{Int}`) is concrete and not 'pointer-backed' (i.e. `Base.allocatedinline` should give `true`).
+3. The type of the field (e.g. `x::Int`) is concrete and an `isbitstype`.
 
-When all three of the above are satisfied, FieldViews can use efficient pointer methods to get and set fields in the array directly without needing to manipulate the entire struct.
+When all of the above conditions are satisfied, FieldViews can use efficient pointer methods to get and set fields in the array directly without needing to manipulate the entire struct.
 
 If any of the above conditions is *not* satisfied, then we need to fetch the entire struct,
 and then either return the requested field of the struct (`getindex`), or construct and store a version of the struct where the field has been modified (`setindex!`).  If the struct is a mutable type, `setindex!` expressions will call `setfield!` on the stored struct, otherwise we construct a new version of immutable structs where the requested field is modified (see  [Accessors.jl](https://github.com/JuliaObjects/Accessors.jl), and our custom [`FieldLens!!`](@ref) object).

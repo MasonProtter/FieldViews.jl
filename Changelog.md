@@ -1,3 +1,8 @@
+# v0.3.2
+
+## Bugfixes
++ `FieldView`s now work correctly with partially instantiated immutable types. Previous versions of FieldViews.jl could cause segfaulting behaviour in the presence of immutable structs with undefined fields.
+
 # v0.3.0
 
 ### Breaking Changes

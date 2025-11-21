@@ -9,11 +9,12 @@ using Accessors:
     ComposedOptic,
     opticcompose
 
-using Base: Broadcast
+using Base: Broadcast, allocatedinline
+using Base.Cartesian: @nexprs
 
 if VERSION > v"1.11.0-DEV.469"
     # public fieldmap, mappedfieldschema
-    eval(Expr(:public, :fieldmap, :mappedfieldschema, :IsStrided, :Unknown, :StridedArrayTrait, :can_use_fast_path))
+    eval(Expr(:public, :fieldmap, :mappedfieldschema, :IsStrided, :Unknown, :StridedArrayTrait, :can_use_fast_path, :setfield!!, :setfield))
 end
 
 #=======================================================================
@@ -141,7 +142,7 @@ points[1].y  # Now 99.0
 Getting and setting to `FieldView` vectors is most efficient when
 the following are satisfied:
 1. The underlying vector (e.g. `arr`) satisfies the [`IsStrided`](@ref) trait
-2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and immutable
+2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and inline-allocated
 3. The type of the field (e.g. `value::Int`) is an `isbitstype`.
 
 When all three of the above are satisfied, FieldViews can use efficient pointer
@@ -238,7 +239,7 @@ arr[2].weight  # 2.0
 Getting and setting to `FieldView` vectors is most efficient when
 the following are satisfied:
 1. The underlying vector (e.g. `arr`) satisfies the [`IsStrided`](@ref) trait
-2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and immutable
+2. The `eltype` of the array (e.g. `Data{Int}`) is concrete and inline-allocated (i.e. not backed by a pointer)
 3. The type of the field (e.g. `value::Int`) is an `isbitstype`.
 
 When all three of the above are satisfied, FieldViews can use efficient pointer
@@ -286,7 +287,7 @@ The fast path is used when ALL of the following conditions are met:
 
 1. **Strided storage**: The underlying array satisfies `StridedArrayTrait(Store) == IsStrided()`
 2. **Concrete element type**: The element type of the underlying storage is concrete
-3. **Immutable element type**: The element type of the underlying storage immutable (not a `mutable struct`)
+3. **Inline allocated element type**: The element type of the underlying storage is not a pointer-backed type (i.e. `Base.allocatedinline`)
 4. **Isbits field**: The field being accessed is and `isbitstype`
 
 When all conditions are met, FieldViews can compute the exact memory address of each
@@ -311,7 +312,7 @@ for correctness.
 - [`FieldView`](@ref): The view type this function analyzes
 """
 function can_use_fast_path(::Type{FieldView{prop, FT, N, T, Store}}) where {prop, FT, N, T, Store}
-    is_strided(Store) && isconcretetype(T) && !ismutabletype(T) && isbitstype(FT)
+    is_strided(Store) && isconcretetype(T) && allocatedinline(T) && isbitstype(FT)
 end
 
 Base.@propagate_inbounds function Base.getindex(v::FieldView{field, FT, N, T}, inds::Integer...) where {field, FT, N, T}
@@ -352,7 +353,7 @@ Base.@propagate_inbounds function Base.setindex!(v::FieldView{field, FT, N, T}, 
         # Slow fallback that works with any of
         # 1. non-strided storage
         # 2. non-concrete eltype
-        # 3. mutable eltype
+        # 3. pointer-backed eltype
         # 4. non-isbits fields
         elem   = @inbounds store[inds...]
         schema = mappedfieldschema(typeof(elem))[field]
@@ -620,17 +621,45 @@ function Accessors.set(o, l::FieldLens!!{prop}, val) where {prop}
     setfield!!(o, Val(prop), val)
 end
 
-@generated function setfield!!(obj::T, ::Val{name}, val) where {T, name}
+function setfield!!(obj::T, ::Val{name}, val) where {T, name}
     if ismutabletype(T)
-        :(setfield!(obj, name, val); obj)
+        setfield!(obj, name, val)
+        obj
     else
-        fields = fieldnames(T)
-        idx = findfirst(==(name), fields)
-        if isnothing(idx)
-            error("$(repr(name)) is not a field of $T, expected one of ", fields)
-        end
-        Expr(:new, T, (name == field ? :val : :(getfield(obj, $(QuoteNode(field)))) for field in fields)...)
+        setfield(obj, Val(name), val)
     end
 end
+
+@generated function setfield(obj::T, ::Val{name}, x::FT) where {T, name, FT}
+    fields = fieldnames(T)
+    FTs = fieldtypes(T)
+    idx = findfirst(==(name), fields)
+    if isnothing(idx)
+        Expr(:call, error, "$(repr(name)) is not a field of $T, expected one of $fields")
+    else
+        quote
+            $(map(1:length(fields)) do i
+                  if allocatedinline(FTs[i])
+                      nothing
+                  else
+                      if i < idx
+                          # Fields that come before the field to be set are not allowed
+                          # to be undef
+                          :(isdefined(obj, $i) || _field_def_err(T, name, $(fields[i])))
+                      elseif i > idx
+                          # Fields *after* the field being set are allowed to be undef, we simply omit them from the
+                          # object being constructed
+                          :(isdefined(obj, $i) || return $(Expr(:new, T, (j == idx ? :x : :(getfield(obj, $j)) for j ∈ 1:i-1)...)))
+                      else # i == idx
+                          nothing
+                      end
+                  end
+              end...)
+            $(Expr(:new, T, (name == field ? :x : :(getfield(obj, $(QuoteNode(field)))) for field in fields)...))
+        end
+    end
+end
+
+@noinline _field_def_err(T, field, undef_field) = throw(ArgumentError("Cannot setfield field $(repr(field)) in object of type $T with fields $(join(repr.(fieldnames(T)), ", ")) because preceding field $(repr(undef_field)) was undefined."))
 
 end # module FieldViews
