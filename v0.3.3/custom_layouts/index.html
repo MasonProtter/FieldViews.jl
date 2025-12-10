@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Custom Layouts · FieldViews.jl Documentation</title><meta name="title" content="Custom Layouts · FieldViews.jl Documentation"/><meta property="og:title" content="Custom Layouts · FieldViews.jl Documentation"/><meta property="twitter:title" content="Custom Layouts · FieldViews.jl Documentation"/><meta name="description" content="Documentation for FieldViews.jl Documentation."/><meta property="og:description" content="Documentation for FieldViews.jl Documentation."/><meta property="twitter:description" content="Documentation for FieldViews.jl Documentation."/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">FieldViews.jl Documentation</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">FieldViews.jl</a></li><li class="is-active"><a class="tocitem" href>Custom Layouts</a><ul class="internal"><li><a class="tocitem" href="#Custom-Data-Layouts"><span>Custom Data Layouts</span></a></li></ul></li><li><a class="tocitem" href="../api/">API Docstrings</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Custom Layouts</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Custom Layouts</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/MasonProtter/FieldViews.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/MasonProtter/FieldViews.jl/blob/master/docs/src/custom_layouts.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h2 id="Custom-Data-Layouts"><a class="docs-heading-anchor" href="#Custom-Data-Layouts">Custom Data Layouts</a><a id="Custom-Data-Layouts-1"></a><a class="docs-heading-anchor-permalink" href="#Custom-Data-Layouts" title="Permalink"></a></h2><h3 id="Working-with-nested-data-layouts"><a class="docs-heading-anchor" href="#Working-with-nested-data-layouts">Working with nested data-layouts</a><a id="Working-with-nested-data-layouts-1"></a><a class="docs-heading-anchor-permalink" href="#Working-with-nested-data-layouts" title="Permalink"></a></h3><p>Sometimes you have nested data but want to treat it as a flattened struct, e.g. adapting an example from the <a href="https://juliaarrays.github.io/StructArrays.jl/stable/advanced/#Structures-with-non-standard-data-layout">StructArrays.jl docs</a></p><pre><code class="language-julia hljs">struct MyType{T, NT&lt;:NamedTuple}
+    x::T
+    rest::NT
+end
+MyType(x; kwargs...) = MyType(x, values(kwargs))
+
+function Base.getproperty(s::MyType, prop::Symbol)
+    if prop == :x
+        getfield(s, prop)
+    else
+        getfield(getfield(s, :rest), prop)
+    end
+end
+Base.propertynames(s::MyType) = (:data, propertynames(getfield(x, :rest))) </code></pre><pre><code class="language-julia hljs">julia&gt; mt = MyType(1.0; a=1, b=2)
+MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(1.0, (a = 1, b = 2))
+
+julia&gt; mt.a
+1
+
+julia&gt; mt.b
+2</code></pre><p>We can support this &#39;flattened&#39; structure in <code>FieldViews</code> by defining a custom method on <code>fieldmap</code> that tells <code>FieldViews</code> how to traverse the nested fields.</p><p>To teach <code>FieldViews</code> how to handle <code>MyType</code>, we&#39;d do</p><pre><code class="language-julia hljs">function FieldViews.fieldmap(::Type{MyType{T, NamedTuple{rest_names, rest_types}}}) where {T, rest_names, rest_types}
+	(:x, map(name -&gt; :rest =&gt; name, rest_names)...)
+end</code></pre><pre><code class="language-julia hljs">julia&gt; FieldViews.fieldmap(typeof(mt))
+(:x, :rest =&gt; :a, :rest =&gt; :b)</code></pre><p>This says that there is one field <code>:x</code> which is not redirected, and two inner fields <code>:a</code> and <code>:b</code> which are redirected from <code>:rest</code>. Now our nested struct is compatible with FieldViews.jl</p><pre><code class="language-julia hljs">julia&gt; s = FieldViewable([MyType(i/5, a=6-i, b=2) for i in 1:5])
+5-element FieldViewable{MyType{Float64, @NamedTuple{a::Int64, b::Int64}}, 1, Vector{MyType{Float64, @NamedTuple{a::Int64, b::Int64}}}}:
+ MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(0.2, (a = 5, b = 2))
+ MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(0.4, (a = 4, b = 2))
+ MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(0.6, (a = 3, b = 2))
+ MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(0.8, (a = 2, b = 2))
+ MyType{Float64, @NamedTuple{a::Int64, b::Int64}}(1.0, (a = 1, b = 2))
+
+julia&gt; s.x[1]
+0.2
+
+julia&gt; s.a[2]
+4
+
+julia&gt; s.b[3]
+2</code></pre><h3 id="Renaming-fields"><a class="docs-heading-anchor" href="#Renaming-fields">Renaming fields</a><a id="Renaming-fields-1"></a><a class="docs-heading-anchor-permalink" href="#Renaming-fields" title="Permalink"></a></h3><p>In addition to flattening out nested field structures, FieldViews.jl is also able to support &quot;renamed&quot; fields, e.g. </p><pre><code class="language-julia hljs">struct Foo
+    a::Int
+	data::@NamedTuple{_b::Int, _c::Int}
+end
+
+function FieldViews.fieldmap(::Type{Foo})
+    (:a, :data =&gt; Renamed(:_b, :b), :data =&gt; Renamed(:_c, :c))
+end</code></pre><pre><code class="language-julia hljs">julia&gt; v = FieldViewable([Foo(1, (_b=1, _c=2))]);
+
+julia&gt; v.c
+1-element FieldView{:c, Int64, 1, Foo, Vector{Foo}}:
+ 2</code></pre><p>This is used for e.g. <code>StaticArray</code> support to rename <code>Tuple</code> fields to <code>:x</code>, <code>:y</code>, <code>:z</code>, <code>:w</code>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« FieldViews.jl</a><a class="docs-footer-nextpage" href="../api/">API Docstrings »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Wednesday 10 December 2025 13:27">Wednesday 10 December 2025</span>. Using Julia version 1.12.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
