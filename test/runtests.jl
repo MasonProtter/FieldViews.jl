@@ -571,3 +571,52 @@ end
     v.w[4] = "This is okay because z is set"
     @test v.w[4] == "This is okay because z is set"
 end
+
+
+
+@testset "Nested FieldViews" begin
+    struct FooN
+        x::String
+        y::Float32
+        z::Int16
+    end
+
+    struct BarN
+        x::Int64
+        y::FooN
+    end
+    v = [BarN(1, FooN("two", 3, 4))
+         BarN(5, FooN("six", 7, 8))
+         BarN(9, FooN("ten", 11, 12))]
+
+    let fv_x = FieldViewable(v).x
+        @test fv_x[1] === 1
+        @test fv_x[3] === 9
+        fv_x[3] = -100
+        @test fv_x[3] === -100
+        @test fv_x[1] === 1
+    end
+    
+    let fv_y_x = FieldViewable(FieldViewable(v).y).x
+        @test fv_y_x[1] == "two"
+        @test fv_y_x[3] == "ten"
+        fv_y_x[3] = "boo!"
+        @test fv_y_x[3] == "boo!"
+        @test fv_y_x[1] == "two"
+    end
+    let fv_y_y = FieldViewable(FieldViewable(v).y).y
+        @test fv_y_y[1] === 3f0 
+        @test fv_y_y[3] === 11f0
+        fv_y_y[3] = -100
+        @test fv_y_y[3] === -100f0 
+        @test fv_y_y[1] === 3f0
+    end
+    let fv_y_z = FieldViewable(FieldViewable(v).y).z
+        @test fv_y_z[1] === Int16(4)
+        @test fv_y_z[3] === Int16(12)
+        fv_y_z[3] = -100
+        @test fv_y_z[3] === -Int16(100)
+        @test fv_y_z[1] === Int16(4)
+    end
+
+end

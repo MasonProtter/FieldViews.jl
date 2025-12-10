@@ -190,6 +190,12 @@ end
 Base.copy(v::FieldViewable) = FieldViewable(copy(parent(v)))
 Base.dataids(v::FieldViewable) = Base.dataids(parent(v))
 
+function Base.pointer(fv::FieldViewable)
+    pointer(parent(fv))
+end
+function Base.pointer(fv::FieldViewable, i::Integer)
+    pointer(parent(fv), i)
+end
 
 #=======================================================================
 FieldView
@@ -267,6 +273,13 @@ Base.parent(v::FieldView) = getfield(v, :parent)
 Base.size(v::FieldView) = size(parent(v))
 Base.IndexStyle(::Type{FieldView{prop, FT, N, T, Store}}) where {prop, FT, N, T, Store} = IndexStyle(Store)
 StridedArrayTrait(::Type{FieldView{prop, FT, N, T, Store}}) where {prop, FT, N, T, Store} = StridedArrayTrait(Store)
+
+function Base.pointer(fv::FieldView{prop, FT, N, T}) where {prop, FT, N, T}
+    p = pointer(parent(fv)) + mappedfieldschema(T)[prop].offset
+end
+function Base.pointer(fv::FieldView{prop, FT, N, T}, i::Integer) where {prop, FT, N, T}
+    p = pointer(parent(fv), i) + mappedfieldschema(T)[prop].offset
+end
 
 to_linear_indices(v, inds::Tuple{}) = 1
 to_linear_indices(v, inds::Tuple{Integer}) = inds[1]
