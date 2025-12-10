@@ -7,6 +7,7 @@ makedocs(
     sitename = "FieldViews.jl Documentation",
     pages = [
         "index.md",
+        "Custom Layouts" => "custom_layouts.md",
         "API Docstrings" => "api.md",
     ],
     modules=[FieldViews],
